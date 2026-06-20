@@ -1,0 +1,9 @@
+vivado_*/
+reports/
+bitstream/
+*.jou
+*.log
+*.pb
+xsim.dir/
+webtalk*
+*.backup.*
