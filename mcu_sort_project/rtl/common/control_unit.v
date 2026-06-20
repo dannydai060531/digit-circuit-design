@@ -37,10 +37,12 @@ module control_unit #(
     output reg           halt,
     output reg  [2:0]    mcu_state,     // for ILA
 
+    input  wire [15:0]  reg_rdata1_val, // register value for accel base
+
     // ALU source selects
     output reg           alu_src_a_sel,
     output reg  [1:0]    alu_src_b_sel,
-    output reg           flags_update,   // 1=this instruction updates NZCV
+    output reg           flags_update,
 
     // Immediate extraction
     output reg  [7:0]    imm8,
@@ -137,8 +139,10 @@ module control_unit #(
         alu_src_b_sel  = 2'b00;  // register rs2
         imm8           = instruction[7:0];
         imm4           = rs2;
-        flags_update   = 1'b1;  // most instructions update flags
+        flags_update   = 1'b1;
         accel_start    = 1'b0;
+        // Pre-set reg_read_addr1 for SORT8/BMERGE base register
+        if (opcode == 4'b1110 || opcode == 4'b1111) reg_read_addr1 = rd;
         accel_base     = 6'd0;
         accel_ncode    = 4'd0;
         accel_is_sort8 = 1'b0;
@@ -243,25 +247,27 @@ module control_unit #(
                         alu_src_b_sel = 2'b01; // imm4
                         next_state = ST_MEMORY;
                     end
-                    4'b1110: begin  // SORT8 (speed) / reserved (eff)
+                    4'b1110: begin  // SORT8
                         if (HAS_ACCEL) begin
+                            reg_read_addr1 = rd;  // Rbase register is at [11:8]
                             accel_start = 1'b1;
-                            accel_base = rd[3:0];
+                            accel_base = reg_rdata1_val[5:0];
                             accel_is_sort8 = 1'b1;
                             next_state = ST_ACCEL_LOAD;
                         end else begin
-                            next_state = ST_FETCH;  // NOP
+                            next_state = ST_FETCH;
                         end
                     end
-                    4'b1111: begin  // BMERGE (speed) / reserved (eff)
+                    4'b1111: begin  // BMERGE
                         if (HAS_ACCEL && (rs1 == 4'd1 || rs1 == 4'd2 || rs1 == 4'd3)) begin
+                            reg_read_addr1 = rd;  // Rbase register at [11:8]
                             accel_start = 1'b1;
-                            accel_base = rd[3:0];
+                            accel_base = reg_rdata1_val[5:0];
                             accel_ncode = rs1;
                             accel_is_sort8 = 1'b0;
                             next_state = ST_ACCEL_LOAD;
                         end else begin
-                            next_state = ST_FETCH;  // NOP
+                            next_state = ST_FETCH;
                         end
                     end
                     default: begin
@@ -308,8 +314,7 @@ module control_unit #(
 
             ST_ACCEL_LOAD: begin
                 accel_start = 1'b1;
-                accel_is_sort8 = (opcode == 4'b1110);  // from IR
-                accel_base = rd;
+                accel_is_sort8 = (opcode == 4'b1110);
                 if (opcode == 4'b1111) accel_ncode = rs1;
                 pc_hold = 1'b1;
                 next_state = ST_ACCEL_STAGE;
@@ -318,7 +323,6 @@ module control_unit #(
             ST_ACCEL_STAGE: begin
                 accel_start = 1'b1;
                 accel_is_sort8 = (opcode == 4'b1110);
-                pc_hold = 1'b1;
                 if (accel_done) begin
                     next_state = ST_ACCEL_WB;
                 end else begin

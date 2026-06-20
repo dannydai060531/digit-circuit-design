@@ -60,6 +60,7 @@ module mcu_core #(parameter HAS_ACCEL = 0) (
         .flags_update(flags_update), .imm8(imm8), .imm4(imm4),
         .accel_start(accel_start), .accel_base(accel_base),
         .accel_ncode(accel_ncode), .accel_is_sort8(accel_is_sort8),
+        .reg_rdata1_val(u_rf.regs[ir[11:8]]),
         .accel_busy(accel_busy), .accel_done(accel_done),
         .n(n), .z(z), .c(c), .v(v));
 
