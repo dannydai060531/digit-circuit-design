@@ -17,7 +17,7 @@ module mcu_core #(parameter HAS_ACCEL = 0) (
     wire [6:0] mem_addr;
     wire [2:0] alu_op, mcu_state;
     wire [3:0] reg_write_addr, reg_read_addr1, reg_read_addr2;
-    wire alu_src_a_sel; wire [1:0] alu_src_b_sel;
+    wire alu_src_a_sel; wire [1:0] alu_src_b_sel; wire flags_update;
     wire [7:0] imm8; wire [3:0] imm4; wire n,z,c,v;
     wire dm_done;
 
@@ -39,6 +39,16 @@ module mcu_core #(parameter HAS_ACCEL = 0) (
     wire accel_mem_wr;
     wire [15:0] accel_mem_wdata;
 
+    reg [15:0] alu_result_reg;
+    reg        n_reg, z_reg, c_reg, v_reg;
+    reg [15:0] mem_rdata_reg;
+    reg [15:0] str_wdata_reg;
+    wire [15:0] alu_result_pipe = (mcu_state == 3'd2) ? alu_result : alu_result_reg;
+    wire n_pipe = n_reg;
+    wire z_pipe = z_reg;
+    wire c_pipe = c_reg;
+    wire v_pipe = v_reg;
+
     control_unit #(.HAS_ACCEL(HAS_ACCEL)) u_ctrl (
         .clk(clk), .rst_n(rst_n), .instruction(ir), .pc(pc),
         .alu_op(alu_op), .reg_wen(reg_wen), .reg_write_addr(reg_write_addr),
@@ -47,11 +57,11 @@ module mcu_core #(parameter HAS_ACCEL = 0) (
         .pc_load(pc_load), .pc_hold(pc_hold), .branch_target(branch_target),
         .halt(halt), .mcu_state(mcu_state),
         .alu_src_a_sel(alu_src_a_sel), .alu_src_b_sel(alu_src_b_sel),
-        .imm8(imm8), .imm4(imm4),
+        .flags_update(flags_update), .imm8(imm8), .imm4(imm4),
         .accel_start(accel_start), .accel_base(accel_base),
         .accel_ncode(accel_ncode), .accel_is_sort8(accel_is_sort8),
         .accel_busy(accel_busy), .accel_done(accel_done),
-        .n(n), .z(z), .c(c), .v(v));
+        .n(n_pipe), .z(z_pipe), .c(c_pipe), .v(v_pipe));
 
     register_file u_rf (
         .clk(clk), .rst_n(rst_n), .write_enable(reg_wen),
@@ -70,14 +80,21 @@ module mcu_core #(parameter HAS_ACCEL = 0) (
     alu u_alu (.alu_op(alu_op), .a(alu_a), .b(alu_b), .result(alu_result),
                .n(n), .z(z), .c(c), .v(v));
 
-    // Pipeline register: latch ALU result during EXECUTE
-    reg [15:0] alu_result_reg;
+    // Pipeline registers: latch ALU result + flags during EXECUTE
     always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) alu_result_reg <= 16'd0;
-        else if (mcu_state == 3'd2) alu_result_reg <= alu_result;  // latch in EXECUTE
+        if (!rst_n) begin
+            alu_result_reg <= 16'd0;
+            n_reg <= 1'b0; z_reg <= 1'b0; c_reg <= 1'b0; v_reg <= 1'b0;
+        end else if (mcu_state == 3'd2) begin
+            alu_result_reg <= alu_result;
+            str_wdata_reg <= reg_rdata2;  // latch STR source
+            if (flags_update) begin
+                n_reg <= n; z_reg <= z; c_reg <= c; v_reg <= v;
+            end
+        end else if (mcu_state == 3'd3) begin
+            mem_rdata_reg <= mem_rdata;
+        end
     end
-    wire [15:0] alu_result_pipe = (mcu_state == 3'd2) ? alu_result : alu_result_reg;
-
     assign mem_addr = alu_result_pipe[6:0];
     assign mem_wdata_real = (ir[15:12]==4'b0111) ? reg_rdata2 : alu_result_pipe;
 

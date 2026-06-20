@@ -24,13 +24,13 @@ module register_file (
         if (!rst_n) begin
             for (i = 0; i < 16; i = i + 1)
                 regs[i] <= 16'd0;
-        end else if (write_enable && write_addr != 4'd0) begin
+        end else if (write_enable) begin
             regs[write_addr] <= write_data;
         end
     end
 
-    // Combinational read: R0 is hardwired to 0
-    assign read_data1 = (read_addr1 == 4'd0) ? 16'd0 : regs[read_addr1];
-    assign read_data2 = (read_addr2 == 4'd0) ? 16'd0 : regs[read_addr2];
+    // Combinational read
+    assign read_data1 = regs[read_addr1];
+    assign read_data2 = regs[read_addr2];
 
 endmodule

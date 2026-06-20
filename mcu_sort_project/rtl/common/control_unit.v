@@ -38,8 +38,9 @@ module control_unit #(
     output reg  [2:0]    mcu_state,     // for ILA
 
     // ALU source selects
-    output reg           alu_src_a_sel,  // 0=reg, 1=pc(for branch offset calc)
-    output reg  [1:0]    alu_src_b_sel,  // 00=reg, 01=imm4, 10=imm8, 11=offset
+    output reg           alu_src_a_sel,
+    output reg  [1:0]    alu_src_b_sel,
+    output reg           flags_update,   // 1=this instruction updates NZCV
 
     // Immediate extraction
     output reg  [7:0]    imm8,
@@ -126,7 +127,8 @@ module control_unit #(
         alu_src_a_sel  = 1'b0;   // register
         alu_src_b_sel  = 2'b00;  // register rs2
         imm8           = instruction[7:0];
-        imm4           = rs2;     // imm4 in I4 format
+        imm4           = rs2;
+        flags_update   = 1'b1;  // most instructions update flags
         accel_start    = 1'b0;
         accel_base     = 6'd0;
         accel_ncode    = 4'd0;
@@ -185,19 +187,20 @@ module control_unit #(
                         alu_src_b_sel = 2'b10; // imm8
                         next_state = ST_MEMORY;
                     end
-                    4'b0110: begin  // LDR
-                        alu_op = 3'b100;  // address = base+index (done in EXECUTE)
+                    4'b0110: begin  // LDR: addr = base + index
+                        alu_op = 3'b000;  // ADD
                         alu_src_a_sel = 1'b0;
                         alu_src_b_sel = 2'b00;
+                        flags_update = 1'b0;
                         next_state = ST_MEMORY;
                         mem_ren = 1'b1;
                     end
-                    4'b0111: begin  // STR
-                        alu_op = 3'b100;
+                    4'b0111: begin  // STR: addr=base+index (rs1+rs2)
+                        alu_op = 3'b000;
                         alu_src_a_sel = 1'b0;
                         alu_src_b_sel = 2'b00;
+                        flags_update = 1'b0;
                         next_state = ST_MEMORY;
-                        mem_wen = 1'b1;
                     end
                     4'b1000: begin  // CMP
                         alu_op = 3'b001;
@@ -207,21 +210,13 @@ module control_unit #(
                         next_state = ST_FETCH;
                     end
                     4'b1001: begin  // B/BL
-                        // branch target = PC+1 + sext(imm11)
-                        alu_op = 3'b000;  // ADD
-                        alu_src_a_sel = 1'b1;  // PC
-                        alu_src_b_sel = 2'b11; // offset
-                        // branch_target computed in MEMORY state
+                        flags_update = 1'b0;
                         next_state = ST_MEMORY;
-                        pc_load = 1'b1;
                     end
                     4'b1011: begin  // Bcc
+                        flags_update = 1'b0;
                         if (cond_true) begin
-                            alu_op = 3'b000;
-                            alu_src_a_sel = 1'b1;
-                            alu_src_b_sel = 2'b11;
                             next_state = ST_MEMORY;
-                            pc_load = 1'b1;
                         end else begin
                             pc_hold = 1'b0;  // advance PC past branch
                             next_state = ST_FETCH;
@@ -267,9 +262,13 @@ module control_unit #(
             end
 
             ST_MEMORY: begin
+                if (opcode == 4'b0111) begin
+                    mem_wen = 1'b1;
+                    reg_read_addr2 = rd;  // keep STR source reg active
+                end
                 if (opcode == 4'b1001) begin  // B/BL
                     branch_target = pc + 8'd1 + {{5{imm11[10]}}, imm11[10:0]};
-                    pc_hold = 1'b0;  // release hold so pc_load takes effect
+                    pc_hold = 1'b0;
                     pc_load = 1'b1;
                     reg_wen = link;
                     if (link) reg_write_addr = 4'd15;
@@ -285,7 +284,9 @@ module control_unit #(
             end
 
             ST_WRITEBACK: begin
-                pc_hold = 1'b0;  // advance PC for next instruction
+                pc_hold = 1'b0;
+                // Keep mem_ren active during WB for LDR data capture
+                if (opcode == 4'b0110) mem_ren = 1'b1;
                 case (opcode)
                     4'b0000, 4'b0001, 4'b0010, 4'b0011,
                     4'b0100, 4'b0101, 4'b0110,

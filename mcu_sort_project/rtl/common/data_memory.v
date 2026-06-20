@@ -59,7 +59,7 @@ module data_memory (
     wire is_merge_ctl= (addr == 7'd70);                     // 0x46 debug
 
     // Synchronous write + reset
-    always @(posedge clk or negedge rst_n) begin
+    always @(negedge clk or negedge rst_n) begin
         if (!rst_n) begin
             for (i = 0; i < 64; i = i + 1)
                 int_ram[i] <= 16'd0;
@@ -82,7 +82,7 @@ module data_memory (
                 end
                 else if (is_rom_addr) begin
                     rom_addr  <= wdata[5:0];
-                    rom_rd_en <= 1'b1;          // pulse ROM read
+                    rom_rd_en <= 1'b1;
                 end
                 else if (is_ram_addr) begin
                     verify_ram_addr <= wdata[5:0];
