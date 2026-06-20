@@ -60,7 +60,7 @@ module mcu_core #(parameter HAS_ACCEL = 0) (
         .flags_update(flags_update), .imm8(imm8), .imm4(imm4),
         .accel_start(accel_start), .accel_base(accel_base),
         .accel_ncode(accel_ncode), .accel_is_sort8(accel_is_sort8),
-        .reg_rdata1_val(u_rf.regs[ir[11:8]]),
+        .reg_rdata1_val(reg_rdata1),
         .accel_busy(accel_busy), .accel_done(accel_done),
         .n(n), .z(z), .c(c), .v(v));
 
@@ -97,6 +97,17 @@ module mcu_core #(parameter HAS_ACCEL = 0) (
     assign mem_addr = alu_result_pipe[6:0];
     assign mem_wdata_real = (ir[15:12]==4'b0111) ? reg_rdata2 : alu_result_pipe;
 
+    // Local accel_start: generated in mcu_core to avoid cross-module timing issues
+    reg accel_start_local;
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) accel_start_local <= 0;
+        else if (mcu_state == 3'd0 && (ir[15:12] == 4'b1110 || ir[15:12] == 4'b1111))
+            accel_start_local <= 1;  // set during FETCH
+        else if (mcu_state == 3'd2)  // EXECUTE: clear after sort_accel had a chance to sample
+            accel_start_local <= 0;
+        // stays 1 during DECODE (state=1)
+    end
+
     generate if (HAS_ACCEL) begin : gen_accel
         sort_accel u_accel (
             .clk(clk), .rst_n(rst_n),
@@ -113,7 +124,7 @@ module mcu_core #(parameter HAS_ACCEL = 0) (
         assign accel_mem_wdata = 16'd0;
     end endgenerate
 
-    wire accel_active = (HAS_ACCEL && accel_busy);
+    wire accel_active = (HAS_ACCEL && (accel_start_local || accel_busy));
     wire [6:0]  dm_addr  = accel_active ? accel_mem_addr  : mem_addr;
     wire        dm_wen   = accel_active ? accel_mem_wr    : mem_wen;
     wire [15:0] dm_wdata = accel_active ? accel_mem_wdata : mem_wdata_real;

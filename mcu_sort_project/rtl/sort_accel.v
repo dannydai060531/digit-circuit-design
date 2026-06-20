@@ -28,6 +28,7 @@ module sort_accel (
         end else case (state)
             S_IDLE: begin
                 done<=0; mem_wr<=0;
+                $display("ACCEL S_IDLE: start=%b busy=%b", start, busy);
                 if (start) begin
                     busy<=1; count<=0; stage<=0; is_bmerge<=~is_sort8;
                     if (is_sort8) begin total_count<=8; end
