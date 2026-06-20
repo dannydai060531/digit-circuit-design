@@ -83,15 +83,24 @@ module control_unit #(
     reg [5:0] accel_stage_cnt;
     reg [5:0] accel_stage_max;
 
-    // Branch condition evaluation
+    // Pipelined flags (latched in this module to avoid NBA timing issues)
+    reg n_latched, z_latched, c_latched, v_latched;
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            n_latched <= 1'b0; z_latched <= 1'b0; c_latched <= 1'b0; v_latched <= 1'b0;
+        end else if (state == ST_EXECUTE && opcode != 4'b1001 && opcode != 4'b1011 && opcode != 4'b0110 && opcode != 4'b0111) begin
+            n_latched <= n; z_latched <= z; c_latched <= c; v_latched <= v;
+        end
+    end
+
     wire cond_true;
     assign cond_true =
-        (cond == 3'd0) ? z :                     // EQ
-        (cond == 3'd1) ? ~z :                    // NE
-        (cond == 3'd2) ? (n != v) :              // LT
-        (cond == 3'd3) ? (~z && (n == v)) :      // GT
-        (cond == 3'd4) ? (z || (n != v)) :       // LE
-        (cond == 3'd5) ? (n == v) :              // GE
+        (cond == 3'd0) ? z_latched :
+        (cond == 3'd1) ? ~z_latched :
+        (cond == 3'd2) ? (n_latched != v_latched) :
+        (cond == 3'd3) ? (~z_latched && (n_latched == v_latched)) :
+        (cond == 3'd4) ? (z_latched || (n_latched != v_latched)) :
+        (cond == 3'd5) ? (n_latched == v_latched) :
         1'b0;
 
     // Main state machine
@@ -298,11 +307,17 @@ module control_unit #(
             end
 
             ST_ACCEL_LOAD: begin
+                accel_start = 1'b1;
+                accel_is_sort8 = (opcode == 4'b1110);  // from IR
+                accel_base = rd;
+                if (opcode == 4'b1111) accel_ncode = rs1;
                 pc_hold = 1'b1;
                 next_state = ST_ACCEL_STAGE;
             end
 
             ST_ACCEL_STAGE: begin
+                accel_start = 1'b1;
+                accel_is_sort8 = (opcode == 4'b1110);
                 pc_hold = 1'b1;
                 if (accel_done) begin
                     next_state = ST_ACCEL_WB;

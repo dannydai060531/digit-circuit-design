@@ -61,7 +61,7 @@ module mcu_core #(parameter HAS_ACCEL = 0) (
         .accel_start(accel_start), .accel_base(accel_base),
         .accel_ncode(accel_ncode), .accel_is_sort8(accel_is_sort8),
         .accel_busy(accel_busy), .accel_done(accel_done),
-        .n(n_pipe), .z(z_pipe), .c(c_pipe), .v(v_pipe));
+        .n(n), .z(z), .c(c), .v(v));
 
     register_file u_rf (
         .clk(clk), .rst_n(rst_n), .write_enable(reg_wen),
@@ -87,10 +87,8 @@ module mcu_core #(parameter HAS_ACCEL = 0) (
             n_reg <= 1'b0; z_reg <= 1'b0; c_reg <= 1'b0; v_reg <= 1'b0;
         end else if (mcu_state == 3'd2) begin
             alu_result_reg <= alu_result;
-            str_wdata_reg <= reg_rdata2;  // latch STR source
-            if (flags_update) begin
-                n_reg <= n; z_reg <= z; c_reg <= c; v_reg <= v;
-            end
+            str_wdata_reg <= reg_rdata2;
+            n_reg <= n; z_reg <= z; c_reg <= c; v_reg <= v;
         end else if (mcu_state == 3'd3) begin
             mem_rdata_reg <= mem_rdata;
         end
